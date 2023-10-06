@@ -1,0 +1,152 @@
+#### DATA DELIVERY FORMAT ####
+The calibrated_final/ folder contains all of the same data that used to be delivered as the calibrated_final.ms, but in a 
+slightly different format, to better align with how the ALMA pipeline works. The ALMA pipeline references measurement sets
+on a per-execution basis, with a format of uid*targets.ms for the continuum + line (non-continuum-subtracted) target-only 
+data, and uid*targets_line.ms to reference the continuum subtracted data. See the ALMA Pipeline Users Guide and Reference 
+Manual for a full description of the ALMA pipeline: https://almascience.nrao.edu/processing/science-pipeline
+
+In previous cycles, the continuum + line data was split and concatenated into the delivered calibrated_final.ms, but this 
+measurement set could no longer be used with pipeline tasks, and the spectral window numbering was lost, which made it 
+difficult to compare against the pipeline weblog.
+
+In the new delivery structure, all uid*targets.ms files are held within calibrated_final/measurement_sets, allowing the
+use of pipeline tasks and making for easier comparison with your delivered ALMA calibration + imaging pipeline weblog. An
+equivalent calibrated_final.ms can be created via 'concat' in CASA if this is desired.
+
+The new data delivery structure is as follows:
+
+calibrated_final/                         # downloaded as calibrated_final.tgz
+    caltables/                            # holds relevant calibration information for continuum subtraction
+        - cont.dat                        # contains the identified continuum ranges from 'findcont' in the ALMA pipeline
+    measurement_sets/                     # holds all measurement sets
+        - uid*targets.ms                  # the non-continuum-subtracted measurement sets, per execution block
+    - scriptForReprocessing.py            # a utility script, described below
+    - README                              # this readme
+
+qa/                                       # downloaded as PROJECT_UID.QA2_report.tgz
+    - uid*.qa0_report.pdf                 # the per-execution QA0 reports
+    - member.uid*.qa2_report.pdf          # the QA2 report for this MOUS
+    
+Calibration+Imaging_Weblog/               # the weblog for the ALMA pipeline run for this MOUS
+
+ADMIT/                                    # per source per spw ADMIT value-added products
+                                          # downloaded as PROJECT_UID_MOUS.ADMIT.tar.gz
+
+
+
+
+ 
+#### SUGGESTED WORKFLOWS ####
+A number of workflows are supported in the new delivery format:
+
+ - You can proceed with your scientific analysis starting with the uid*targets.ms files and supply them to CASA tasks such 
+  as tclean, uvcontsub, or gaincal as a list (vis=['MS1.ms', 'MS2.ms', etc]). Examining the casa commands for each stage of
+  the delivered ALMA calibration + imaging weblog will give examples of this (e.g. you can get the tclean command for any
+  image that was made by clicking within the relevant hif_makeimages() stage).
+
+ - You can use scriptForReprocessing.py to restore the continuum subtracted data, re-image the data in the ALMA pipeline
+  using new imaging parameters, or view the weblog (see below for usage). Here you can also easily modify cont.dat and
+  rerun the continuum subtraction and/or imaging with a different continuum selection.
+
+ - You can generate the old style calibrated_final.ms either using scriptForReprocessing.py, or by hand via concat(). If you
+  use scriptForReprocessing.py, there is also an option to generate an analogous calibrated_final_line.ms.
+
+
+
+
+
+#### scriptForReprocessing.py OVERVIEW ####
+scriptForReprocessing.py is intended to be a convenient wrapper for many of the ALMA pipeline functions that users may wish
+to use on their NA delivered value-added products. See the ALMA Pipeline Users Guide and Reference Manual for a full
+description of the ALMA pipeline: https://almascience.nrao.edu/processing/science-pipeline
+
+The script can be launched via CASA with any version of CASA that includes the ALMA pipeline. See the above link for a mapping
+of ALMA Cycle, CASA version, and Pipeline version. Thus it should be launched as:
+
+$ casa --pipeline -c scriptForReprocessing.py [options]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --contsub             Fit and subtract continuum using the channel ranges from the local
+                        cont.dat file. Generates new uid*targets_line.ms in measurement_sets/
+  --image [IMAGE]       Run the imaging pipeline and place images in the specified directory
+                        (default='images'). NOTE: unless cont.dat or the imaging options in this
+                        script are modified, the images produced will be identical to those on the
+                        ALMA Science Archive
+  --cleanup             Remove working_reprocess/ directory and log files after any other options
+                        are executed. WARNING: removes weblogs inside of working_reprocess/
+  --weblog [WEBLOG]     Launches a browser to view weblog after other tasks are run. By default
+                        ('latest'), displays the latest weblog generated locally. Other options
+                        are to use the specific pipeline folder name (e.g.
+                        'pipeline-20221010T192458')
+  --calibrated_final    Concatenate uid*targets.ms to produce calibrated_final.ms in
+                        measurement_sets/
+  --calibrated_final_line
+                        Concatenate uid*targets_line.ms (if they exist) to produce
+                        calibrated_final_line.ms in measurement_sets/
+
+Example usage: 
+  Continuum subtract to get uid*targets_line.ms and cleanup: 
+    casa --pipeline -c scriptForReprocessing.py --contsub --cleanup 
+
+  Continuum subtract with a modified cont.dat, reimage, and view the resultant weblog: 
+    Modify cont.dat in caltables/
+    casa --pipeline -c scriptForReprocessing.py --contsub --image modified_images_folder --weblog 
+
+  Make new mfs and agg cont images with different robust value and view the resultant weblog: 
+    Modify robust parameter in scriptForReprocessing.py 
+    casa --pipeline -c scriptForReprocessing.py --image new_robust_images_folder --weblog 
+
+  Continuum subtract and generate all pipeline images with no mitigation 
+    Modify mitigate parameter in scriptForReprocessing.py -> False 
+    casa --pipeline -c scriptForReprocessing.py --contsub --image no_mitigation_folder
+
+  Make the old calibrated_final.ms and cleanup: 
+    casa --pipeline -c scriptForReprocessing.py --calibrated_final --cleanup
+
+
+
+If you open the script in a text editor, you will notice a block of user editable options at the top of the script (shown
+below). These options modify the imaging pipeline in various ways. Some of the most useful options may be to change mitigation
+parameters to image all of your science targets and spectral windows, to reimage a portion of your data with a different robust
+value, or to reimage with a uvtaper applied.
+
+
+make_mfs_images = True                  # generate mfs (per spw) images
+make_cont_images = True                 # generate aggregate continuum images
+make_cube_images = True                 # generate cube images 
+make_repBW_images = True                # generate images corresponding to the requested representative bandwidth
+mitigate = True                         # run hif_checkproductsize() and mitigate created products if necessary. 
+                                        # Set to false if you want all spws and all targets imaged at full resolution. 
+                                        # WARNING: turning off mitigation may result in very large disk usage. Consider 
+                                        # adjusting other mitigation parameter first, or manually selecting the target/spw 
+                                        # combinations you want.
+
+# for all values below, see Pipeline Users Guide and Reference Manual for detailed descriptions: 
+# https://almascience.nrao.edu/processing/science-pipeline
+#
+# any parameters not selected here can be edited manually in relevant section of the script below
+maxproductsize = 350.                   # for mitigation; in GB
+maxcubesize = 40.                       # for mitigation; in GB
+maxcubelimit = 60.                      # for mitigation; in GB
+
+field = None                            # String specifying fields to be imaged; default is all (pending mitigation)
+                                        #     Example: ’3C279, M82’
+phasecenter = None                      # Direction measure or field id of the image center. The default phase center is 
+                                        # set to the mean of the field directions of all fields that are to be image together.
+                                        #     Examples: ’ICRS 13:05:27.2780 -049.28.04.458’, "TRACKFIELD" (for ephemeris)
+spw = None                              # Spw(s) to image; default is all spws
+                                        #     Example: '17, 23'
+uvrange = None                          # Select a set of uv ranges to image; default is all
+                                        #     Examples: ’0~1000klambda’, [’0~100klambda’,'300~1000klambda']
+hm_imsize = None                        # Image x and y size in pixels or PB level; default is automatically determined
+                                        #     Examples: ’0.3pb’, [120, 120]
+hm_cell = None                          # Image cell size; default is automatically determined
+                                        #     Examples: ’3ppb’, [’0.5arcsec’, ’0.5arcsec’]
+nbins = None                            # Channel binning factor for each spw; default is none
+                                        #     Format:’spw1:nb1,spw2:nb2,...’ with optional wildcards: ’*:nb’
+                                        #     Examples: ’9:2,11:4,13:2,15:8’, ’*:2’ 
+robust = None                           # Robust value to image with; default is automatically determined
+                                        #     Example: 0.5
+uvtaper = None                          # Uvtaper to apply to data; default is none
+                                        #     Example: ['1arcsec']
